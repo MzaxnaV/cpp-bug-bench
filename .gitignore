@@ -1,0 +1,33 @@
+# Files git should never track. One pattern per line; a trailing / means "a folder".
+
+# Private working notes , plans. Never published.
+dump/
+
+.env
+.env.*
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# C++ build outputs
+build/
+*.o
+*.out
+a.out
+
+# Scratch results from development runs
+results/scratch/
+
+# Problems should not leak into training data.
+problems-private/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
