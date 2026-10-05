@@ -19,6 +19,12 @@ SANITIZER_FLAGS = {
     "address,undefined": ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"],
 }
 
+SAN_ENV = {
+    "ASAN_OPTIONS": "exitcode=77",
+    "UBSAN_OPTIONS": "halt_on_error=1:exitcode=77",
+    "TSAN_OPTIONS": "exitcode=77",
+}
+
 
 @dataclass(frozen=True)
 class RunResult:
@@ -37,6 +43,7 @@ def run(
     sanitizer: str,
     timeout_s: int = 10,
     compile_timeout_s: int = 300,
+    env: dict[str, str] | None = None,
 ) -> RunResult:
     if sanitizer not in SANITIZER_FLAGS:
         raise ValueError(
@@ -51,6 +58,11 @@ def run(
         f"|| exit {COMPILE_FAILED}\n"
         f"timeout --verbose -s KILL {timeout_s} /tmp/t"
     )
+
+    env_flags = []
+    for key, value in (env or {}).items():
+        env_flags += ["-e", f"{key}={value}"]
+
     # fmt: off
     cmd = [
         "docker", "run", "--rm", "--name", name,
@@ -60,6 +72,7 @@ def run(
         "--read-only", "--tmpfs", "/tmp:exec,size=256m",
         "--security-opt", f"seccomp={SECCOMP_PROFILE}",
         "-v", f"{source_dir.resolve()}:/src:ro",
+        *env_flags,
         IMAGE,
         "bash", "-c", script,
     ]

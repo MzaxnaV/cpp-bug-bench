@@ -65,5 +65,10 @@ def test_nothing_fails_the_sandbox_on_normal_runs():
     assert not r.sandbox_failed
 
 
+def test_env_sets_sanitizer_exit_code():
+    r = run(CHECK_DIR, "bug.cpp", "address", env={"ASAN_OPTIONS": "exitcode=77"})
+    assert r.compiled and r.exit_code == 77
+
+
 # TODO: compile timeout: needs a program that reliably compiles slowly
 # TODO: sandbox_failed=True: needs Docker itself to hang
