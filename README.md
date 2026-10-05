@@ -36,7 +36,7 @@ Every attempt ends in exactly one bucket:
 
 ## Setup
 
-Requirements: Linux (or WSL2), Docker, Python 3.12+ and uv.
+Requirements: Linux (or WSL2), Docker, Python 3.13+ and uv.
 
 1. Clone the repo.
 2. Create a `.env` file in the repo root containing your OpenRouter key:
@@ -46,7 +46,9 @@ Requirements: Linux (or WSL2), Docker, Python 3.12+ and uv.
    `.env` is git-ignored and is never committed.
 
 # ToDo
-- [ ] Docker grading sandbox
+- [x] Docker grading sandbox
+- [x] Sandbox runner (Python)
+- [x] Answer parser
 - [ ] Grader
 - [ ] Model client (OpenRouter)
 - [ ] First 10 problems
