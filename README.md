@@ -12,7 +12,7 @@ A claimed bug only counts if the model's test proves it:
 - The model's test is compiled against both, with a clang sanitizer turned on (AddressSanitizer, UndefinedBehaviorSanitizer or ThreadSanitizer).
 - **Found** means the sanitizer reports an error on the buggy version and stays quiet on the fixed one.
 
-The model's own asserts or explanations are never taken as proof. Only a sanitizer report counts.
+The model's own asserts or explanations are never taken as proof. Only a sanitizer report counts. A run counts as "fired" only when the program exits with the sanitizer's exit code (set to 77) **and** the sanitizer's report is in the output. Either one alone can be faked by the test.
 
 Some problems contain no bug at all. On those the correct answer is "no bug", and a test that fails to fire shows the claimed bug was a false alarm.
 
@@ -26,6 +26,29 @@ Every attempt ends in exactly one bucket:
 | `missed` | No proven bug |
 | `test_invalid` | The test doesn't compile, the answer is malformed, the test fires on both versions, or the result is flaky |
 | `infra_error` | Something outside the model failed (rate limit, timeout, provider error, Docker failure). Retried and reported separately, never counted as a miss |
+
+## Problems
+
+Each problem is a folder in `problems/`:
+
+```
+problems/p0001/
+  problem.toml      # id, sanitizer, has_bug, plus hidden notes (category, summary, source, added)
+  buggy/code.hpp    # the code the model sees
+  fixed/code.hpp    # the smallest change that removes the bug
+  proof/test.cpp    # a known-good test; must fire on buggy and stay quiet on fixed
+```
+
+- IDs are neutral (`p0001`), so the name gives nothing away.
+- One bug per problem.
+- The model's test must `#include "code.hpp"` and define `main()`.
+- `problem.toml` and `proof/test.cpp` carry a canary GUID, so leaks into training data can be detected. `code.hpp` doesn't, because the model sees it.
+
+Check that a problem's proof works:
+
+```bash
+uv run python scripts/check_proof.py p0001
+```
 
 ## How it runs
 
@@ -49,7 +72,10 @@ Requirements: Linux (or WSL2), Docker, Python 3.13+ and uv.
 - [x] Docker grading sandbox
 - [x] Sandbox runner (Python)
 - [x] Answer parser
-- [ ] Grader
+- [x] Problem layout
+- [x] Grader
 - [ ] Model client (OpenRouter)
-- [ ] First 10 problems
+- [ ] First 10 problems (1/10)
+- [ ] Problem validation + scaffold script
 - [ ] Run instructions
+- [ ] Later: no-bug outcomes, flaky-run retries, fixed-timeout test, canary in prompts, private problem set

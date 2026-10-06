@@ -1,0 +1,104 @@
+from pathlib import Path
+
+from cpp_bug_bench.answer import ParsedAnswer
+from cpp_bug_bench.grader import SANITIZER_EXIT, _run_version, fired, grade, load_problem
+from cpp_bug_bench.sandbox import RunResult
+
+PROBLEMS = Path(__file__).parents[1] / "problems"
+ASAN_REPORT = "==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x1"
+
+
+def result(exit_code: int | None, output: str, compiled: bool = True) -> RunResult:
+    return RunResult(
+        compiled=compiled,
+        exit_code=exit_code,
+        output=output,
+        timed_out=False,
+        out_of_memory=False,
+        seconds=0.0,
+        sandbox_failed=False,
+    )
+
+
+def bug_answer(test: str) -> ParsedAnswer:
+    return ParsedAnswer(verdict="bug", review="", test=test, fence_stripped=False, error=None)
+
+
+def test_load_problem_reads_toml():
+    p = load_problem(PROBLEMS / "p0001")
+    assert p.id == "p0001"
+    assert p.sanitizer == "address"
+    assert p.has_bug is True
+
+
+def test_fired_needs_exit_code_and_marker():
+    assert fired(result(SANITIZER_EXIT, ASAN_REPORT), "address")
+
+
+def test_exit_code_alone_is_not_fired():
+    # e.g. the test calls exit(77) itself
+    assert not fired(result(SANITIZER_EXIT, "nothing here"), "address")
+
+
+def test_marker_alone_is_not_fired():
+    # e.g. the test prints the marker text, or an assert fails after it
+    assert not fired(result(1, ASAN_REPORT), "address")
+
+
+def test_marker_of_other_sanitizer_is_not_fired():
+    assert not fired(result(SANITIZER_EXIT, ASAN_REPORT), "thread")
+
+
+def test_combined_sanitizer_accepts_either_marker():
+    ubsan = "code.hpp:3:5: runtime error: signed integer overflow"
+    assert fired(result(SANITIZER_EXIT, ASAN_REPORT), "address,undefined")
+    assert fired(result(SANITIZER_EXIT, ubsan), "address,undefined")
+
+
+def test_compile_failure_is_not_fired():
+    assert not fired(result(None, ASAN_REPORT, compiled=False), "address")
+
+
+def test_malformed_answer_is_invalid():
+    error = "missing verdict"
+    bad = ParsedAnswer(verdict=None, review="", test="", fence_stripped=False, error=error)
+    g = grade(load_problem(PROBLEMS / "p0001"), bad)
+    assert g.outcome == "test_invalid" and g.reason == "missing verdict"
+
+
+def test_verdict_none_is_missed():
+    none = ParsedAnswer(verdict="none", review="", test="", fence_stripped=False, error=None)
+    assert grade(load_problem(PROBLEMS / "p0001"), none).outcome == "missed"
+
+
+# The tests below run Docker.
+
+
+def test_proof_fires_on_buggy_only():
+    p = load_problem(PROBLEMS / "p0001")
+    proof = (p.dir / "proof" / "test.cpp").read_text()
+    assert fired(_run_version(p, "buggy", proof), p.sanitizer)
+    assert not fired(_run_version(p, "fixed", proof), p.sanitizer)
+
+
+def test_grade_proof_is_found():
+    p = load_problem(PROBLEMS / "p0001")
+    g = grade(p, bug_answer((p.dir / "proof" / "test.cpp").read_text()))
+    assert g.outcome == "found", g.reason
+
+
+def test_grade_quiet_test_is_missed():
+    g = grade(load_problem(PROBLEMS / "p0001"), bug_answer('#include "code.hpp"\nint main() {}\n'))
+    assert g.outcome == "missed" and g.fixed is None
+
+
+def test_grade_compile_error_is_invalid():
+    g = grade(load_problem(PROBLEMS / "p0001"), bug_answer("int main() { return x; }\n"))
+    assert g.outcome == "test_invalid" and g.reason == "does not compile"
+
+
+def test_grade_fires_on_both_is_invalid():
+    # a use-after-free of its own, unrelated to the problem's code
+    test = '#include "code.hpp"\nint main() { int* p = new int(1); delete p; return *p; }\n'
+    g = grade(load_problem(PROBLEMS / "p0001"), bug_answer(test))
+    assert g.outcome == "test_invalid" and g.reason == "fires on both"
