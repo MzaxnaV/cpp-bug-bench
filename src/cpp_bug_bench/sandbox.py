@@ -1,14 +1,15 @@
+import os
 import shlex
 import subprocess
+import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 IMAGE = "cbb-grader"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECCOMP_PROFILE = REPO_ROOT / "docker" / "seccomp.json"
-COMPILE_FAILED = 100  # TODO: a test that itself exits with 100 is misread as a compile failure
 KILLED = 137
 TIMEOUT_MARKER = "sending signal KILL"
 
@@ -37,6 +38,75 @@ class RunResult:
     sandbox_failed: bool  # container never answered -> infra_error
 
 
+@dataclass(frozen=True)
+class BuildResult:
+    compiled: bool
+    output: str  # compiler errors and warnings
+    seconds: float
+    sandbox_failed: bool  # container never answered -> infra_error
+
+
+def build(
+    source_dir: Path,
+    main_file: str,
+    sanitizer: str,
+    out_dir: Path,
+    compile_timeout_s: int = 300,
+) -> BuildResult:
+    # compiles in its own container and leaves the binary in out_dir as "t"
+    if sanitizer not in SANITIZER_FLAGS:
+        raise ValueError(
+            f"unknown sanitizer {sanitizer!r}; expected one of {list(SANITIZER_FLAGS)}"
+        )
+
+    os.chmod(out_dir, 0o777)  # the container's user writes the binary here
+    flags = " ".join(SANITIZER_FLAGS[sanitizer])
+    script = (
+        f"timeout --verbose -s KILL {compile_timeout_s} "
+        f"clang++-21 -std=c++20 -g {flags} /src/{shlex.quote(main_file)} -o /out/t"
+    )
+    mounts = [f"{source_dir.resolve()}:/src:ro", f"{out_dir.resolve()}:/out"]
+    code, output, seconds = _docker(mounts, None, script, compile_timeout_s + 60)
+
+    if code is None:
+        return BuildResult(compiled=False, output=output, seconds=seconds, sandbox_failed=True)
+    return BuildResult(compiled=code == 0, output=output, seconds=seconds, sandbox_failed=False)
+
+
+def execute(
+    out_dir: Path,
+    timeout_s: int = 10,
+    env: dict[str, str] | None = None,
+) -> RunResult:
+    # runs the binary from build() in a fresh container. Call it again for another run.
+    script = f"timeout --verbose -s KILL {timeout_s} /out/t"
+    mounts = [f"{out_dir.resolve()}:/out:ro"]
+    code, output, seconds = _docker(mounts, env, script, timeout_s + 60)
+
+    if code is None:
+        return RunResult(
+            compiled=True,
+            exit_code=None,
+            output=output,
+            timed_out=False,
+            out_of_memory=False,
+            seconds=seconds,
+            sandbox_failed=True,
+        )
+
+    killed = code == KILLED
+    timed_out = killed and TIMEOUT_MARKER in output
+    return RunResult(
+        compiled=True,
+        exit_code=code,
+        output=output,
+        timed_out=timed_out,
+        out_of_memory=killed and not timed_out,
+        seconds=seconds,
+        sandbox_failed=False,
+    )
+
+
 def run(
     source_dir: Path,
     main_file: str,
@@ -45,20 +115,33 @@ def run(
     compile_timeout_s: int = 300,
     env: dict[str, str] | None = None,
 ) -> RunResult:
-    if sanitizer not in SANITIZER_FLAGS:
-        raise ValueError(
-            f"unknown sanitizer {sanitizer!r}; expected one of {list(SANITIZER_FLAGS)}"
-        )
+    # build + one execute, for callers that need a single run
+    with tempfile.TemporaryDirectory() as out:
+        out_dir = Path(out)
+        b = build(source_dir, main_file, sanitizer, out_dir, compile_timeout_s)
+        if b.sandbox_failed or not b.compiled:
+            return RunResult(
+                compiled=False,
+                exit_code=None,
+                output=b.output,
+                timed_out=False,
+                out_of_memory=False,
+                seconds=b.seconds,
+                sandbox_failed=b.sandbox_failed,
+            )
+        r = execute(out_dir, timeout_s, env)
+        return replace(r, output=b.output + r.output, seconds=b.seconds + r.seconds)
 
+
+def _docker(
+    mounts: list[str], env: dict[str, str] | None, script: str, timeout_s: int
+) -> tuple[int | None, str, float]:
+    # returns (exit code, output, seconds). Exit code is None if the container never answered.
     name = f"cbb-{uuid.uuid4().hex[:12]}"
-    flags = " ".join(SANITIZER_FLAGS[sanitizer])
-    script = (
-        f"timeout --verbose -s KILL {compile_timeout_s} "
-        f"clang++-21 -std=c++20 -g {flags} /src/{shlex.quote(main_file)} -o /tmp/t "
-        f"|| exit {COMPILE_FAILED}\n"
-        f"timeout --verbose -s KILL {timeout_s} /tmp/t"
-    )
 
+    mount_flags = []
+    for m in mounts:
+        mount_flags += ["-v", m]
     env_flags = []
     for key, value in (env or {}).items():
         env_flags += ["-e", f"{key}={value}"]
@@ -71,7 +154,7 @@ def run(
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--read-only", "--tmpfs", "/tmp:exec,size=256m",
         "--security-opt", f"seccomp={SECCOMP_PROFILE}",
-        "-v", f"{source_dir.resolve()}:/src:ro",
+        *mount_flags,
         *env_flags,
         IMAGE,
         "bash", "-c", script,
@@ -80,37 +163,11 @@ def run(
 
     start = time.monotonic()
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=compile_timeout_s + timeout_s + 60
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired as e:
         subprocess.run(["docker", "kill", name], capture_output=True)
-        return RunResult(
-            compiled=False,  # compiled not known, False chosen as safe bet
-            exit_code=None,
-            output=_text(e.stdout) + _text(e.stderr),
-            timed_out=False,
-            out_of_memory=False,
-            seconds=time.monotonic() - start,
-            sandbox_failed=True,
-        )
-    seconds = time.monotonic() - start
-    output = proc.stdout + proc.stderr
-
-    code = proc.returncode
-    compiled = code != COMPILE_FAILED
-    killed = compiled and code == KILLED
-    timed_out = killed and TIMEOUT_MARKER in output
-
-    return RunResult(
-        compiled=compiled,
-        exit_code=code if compiled else None,
-        output=output,
-        timed_out=timed_out,
-        out_of_memory=killed and not timed_out,
-        seconds=seconds,
-        sandbox_failed=False,
-    )
+        return None, _text(e.stdout) + _text(e.stderr), time.monotonic() - start
+    return proc.returncode, proc.stdout + proc.stderr, time.monotonic() - start
 
 
 def _text(x: str | bytes | None) -> str:

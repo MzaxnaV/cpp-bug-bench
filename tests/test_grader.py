@@ -1,8 +1,16 @@
 from pathlib import Path
 
 from cpp_bug_bench.answer import ParsedAnswer
-from cpp_bug_bench.grader import SANITIZER_EXIT, _run_version, fired, grade, load_problem
-from cpp_bug_bench.sandbox import RunResult
+from cpp_bug_bench.grader import (
+    SANITIZER_EXIT,
+    _build_version,
+    decide_counts,
+    fired,
+    fisher_p,
+    grade,
+    load_problem,
+)
+from cpp_bug_bench.sandbox import SAN_ENV, RunResult, execute
 
 PROBLEMS = Path(__file__).parents[1] / "problems"
 ASAN_REPORT = "==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x1"
@@ -71,20 +79,39 @@ def test_verdict_none_is_missed():
     assert grade(load_problem(PROBLEMS / "p0001"), none).outcome == "missed"
 
 
+def test_fisher_p_matches_hand_computed_values():
+    assert abs(fisher_p(6, 0, 10) - 210 / 38760) < 1e-12  # C(10,6) / C(20,6)
+    assert abs(fisher_p(5, 0, 10) - 252 / 15504) < 1e-12  # C(10,5) / C(20,5)
+    assert abs(fisher_p(10, 0, 10) - 1 / 184756) < 1e-12  # 1 / C(20,10)
+
+
+def test_decide_counts():
+    assert decide_counts(6, 0, 10) == ("found", "fires on buggy only")
+    assert decide_counts(5, 0, 10) == ("test_invalid", "too flaky")
+    assert decide_counts(3, 0, 10) == ("test_invalid", "too flaky")
+    assert decide_counts(10, 1, 10) == ("test_invalid", "fires on both")
+    assert decide_counts(0, 0, 10) == ("missed", "did not fire on buggy")
+    assert decide_counts(1, 0, 1) == ("found", "fires on buggy only")  # deterministic build
+
+
 # The tests below run Docker.
 
 
-def test_proof_fires_on_buggy_only():
+def test_proof_fires_on_buggy_only(tmp_path):
     p = load_problem(PROBLEMS / "p0001")
     proof = (p.dir / "proof" / "test.cpp").read_text()
-    assert fired(_run_version(p, "buggy", proof), p.sanitizer)
-    assert not fired(_run_version(p, "fixed", proof), p.sanitizer)
+    for version, should_fire in [("buggy", True), ("fixed", False)]:
+        out = tmp_path / version
+        out.mkdir()
+        assert _build_version(p, version, proof, p.sanitizer, out).compiled
+        assert fired(execute(out, env=SAN_ENV), p.sanitizer) is should_fire
 
 
 def test_grade_proof_is_found():
     p = load_problem(PROBLEMS / "p0001")
     g = grade(p, bug_answer((p.dir / "proof" / "test.cpp").read_text()))
     assert g.outcome == "found", g.reason
+    assert g.sanitizer == "address,undefined"
 
 
 def test_grade_quiet_test_is_missed():
@@ -102,3 +129,12 @@ def test_grade_fires_on_both_is_invalid():
     test = '#include "code.hpp"\nint main() { int* p = new int(1); delete p; return *p; }\n'
     g = grade(load_problem(PROBLEMS / "p0001"), bug_answer(test))
     assert g.outcome == "test_invalid" and g.reason == "fires on both"
+
+
+def test_grade_race_proof_is_found_by_thread_build():
+    # ASan+UBSan sees nothing here. Only the TSan build separates buggy from fixed.
+    p = load_problem(PROBLEMS / "p0006")
+    g = grade(p, bug_answer((p.dir / "proof" / "test.cpp").read_text()))
+    assert g.outcome == "found", g.reason
+    assert g.sanitizer == "thread"
+    assert g.runs == 10 and g.buggy_fired >= 6 and g.fixed_fired == 0

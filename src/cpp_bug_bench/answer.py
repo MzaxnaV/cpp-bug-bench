@@ -15,11 +15,11 @@ def _find(reply: str, tag: str) -> tuple[int, str | None]:
 
 @dataclass(frozen=True)
 class ParsedAnswer:
-    verdict: str | None  # "bug" or "none"; None if the answer is invalid
+    verdict: str | None  # "bug" or "none", or None if the answer is invalid
     review: str
     test: str  # "" when verdict is none
     fence_stripped: bool  # a ``` fence was removed from the test
-    error: str | None  # why it's invalid; None if valid
+    error: str | None  # why it's invalid, or None if valid
 
 
 def parse(reply: str) -> ParsedAnswer:

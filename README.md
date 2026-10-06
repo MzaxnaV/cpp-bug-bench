@@ -2,19 +2,19 @@
 
 A benchmark that tests whether language models can find real bugs in C++ code **and prove them**.
 
-> **Status:** work in progress.
+> **Work in progress.**
 
 Each problem is a piece of C++ code. The model is asked to review it and either report a bug it can prove with a test, or say it found none. The prompt never says whether a bug exists.
 
 A claimed bug only counts if the model's test proves it:
 
-- The problem ships two versions of the code: `buggy` and `fixed`.
+- The problem ships two versions of the code, `buggy` and `fixed`.
 - The model's test is compiled against both, with a clang sanitizer turned on (AddressSanitizer, UndefinedBehaviorSanitizer or ThreadSanitizer).
 - **Found** means the sanitizer reports an error on the buggy version and stays quiet on the fixed one.
 
 The model's own asserts or explanations are never taken as proof. Only a sanitizer report counts. A run counts as "fired" only when the program exits with the sanitizer's exit code (set to 77) **and** the sanitizer's report is in the output. Either one alone can be faked by the test.
 
-Scope: only bugs a sanitizer can detect, such as memory errors, undefined behaviour and data races. Logic bugs (wrong results without undefined behaviour) are out of scope for now.
+The benchmark only covers bugs a sanitizer can detect, such as memory errors, undefined behaviour and data races. Logic bugs (wrong results without undefined behaviour) are out of scope for now.
 
 Some problems contain no bug at all. On those the correct answer is "no bug", and a test that fails to fire shows the claimed bug was a false alarm.
 
@@ -38,7 +38,7 @@ problems/p0001/
   problem.toml      # id, sanitizer, has_bug, plus hidden notes (category, summary, source, added)
   buggy/code.hpp    # the code the model sees
   fixed/code.hpp    # the smallest change that removes the bug
-  proof/test.cpp    # a known-good test; must fire on buggy and stay quiet on fixed
+  proof/test.cpp    # a known-good test that fires on buggy and stays quiet on fixed
 ```
 
 - IDs are neutral (`p0001`), so the name gives nothing away.
@@ -54,14 +54,14 @@ uv run python scripts/check_proof.py p0001
 
 ## How it runs
 
-- **Harness:** Python, managed with [uv](https://docs.astral.sh/uv/).
-- **Models:** called through [OpenRouter](https://openrouter.ai/).
-- **Grading:** inside Docker, with a pinned Ubuntu and clang version. Each test runs in a fresh container with no network and with CPU, memory and time limits, so model-written code is sandboxed and results are reproducible.
-- **Logs:** one JSON line per attempt, recording the model, the provider that served it, tokens, cost, outcome, the Docker image digest and the kernel version.
+- **Harness** in Python, managed with [uv](https://docs.astral.sh/uv/).
+- **Models** called through [OpenRouter](https://openrouter.ai/).
+- **Grading** runs inside Docker, with a pinned Ubuntu and clang version. Each test runs in a fresh container with no network and with CPU, memory and time limits, so model-written code is sandboxed and results are reproducible.
+- **Logs** have one JSON line per attempt, recording the model, the provider that served it, tokens, cost, outcome, the Docker image digest and the kernel version.
 
 ## Setup
 
-Requirements: Linux (or WSL2), Docker, Python 3.13+ and uv.
+You need Linux (or WSL2), Docker, Python 3.13+ and uv.
 
 1. Clone the repo.
 2. Create a `.env` file in the repo root containing your OpenRouter key:
@@ -70,16 +70,11 @@ Requirements: Linux (or WSL2), Docker, Python 3.13+ and uv.
    ```
    `.env` is git-ignored and is never committed.
 
-# ToDo
-- [x] Docker grading sandbox
-- [x] Sandbox runner (Python)
-- [x] Answer parser
-- [x] Problem layout
-- [x] Grader
-- [ ] Prompt builder
-- [ ] Grader: run every sanitizer, TSan reruns, no-bug outcomes
-- [ ] Model client (OpenRouter)
-- [x] First 10 problems (drafted, proofs checked)
-- [ ] Problem validation + scaffold script
-- [ ] Run instructions
-- [ ] Later: fixed-timeout test, canary in prompts, private problem set
+# Roadmap
+- [x] Sanitizer-verified grading in a locked-down Docker sandbox
+- [x] Tests run under every sanitizer, so the prompt never hints at the bug type
+- [ ] Repeat runs for data races, decided statistically
+- [ ] False-alarm measurement on bug-free code
+- [ ] Model runs through OpenRouter, logged and cost-capped
+- [ ] v0 with 10 hand-written problems
+- [ ] v1 with harder problems from real repositories

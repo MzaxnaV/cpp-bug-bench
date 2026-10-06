@@ -1,6 +1,6 @@
 from cpp_bug_bench.grader import Problem
 
-# Bump when the text changes: results from different versions aren't comparable.
+# Bump this when the text changes, because results from different versions aren't comparable.
 PROMPT_VERSION = "v1"
 
 TEMPLATE = """\

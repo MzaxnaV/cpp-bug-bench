@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cpp_bug_bench.sandbox import run
 
-# usage: check_proof.py p0001 p0002 ...   (no ids = every problem)
+# Run with problem ids (check_proof.py p0001 p0002), or with none to check every problem.
 ids = sys.argv[1:] or sorted(p.name for p in Path("problems").iterdir() if p.is_dir())
 
 for pid in ids:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cpp_bug_bench.sandbox import run
+from cpp_bug_bench.sandbox import build, execute, run
 
 CHECK_DIR = Path(__file__).parent / "cpp"
 
@@ -70,5 +70,24 @@ def test_env_sets_sanitizer_exit_code():
     assert r.compiled and r.exit_code == 77
 
 
-# TODO: compile timeout: needs a program that reliably compiles slowly
-# TODO: sandbox_failed=True: needs Docker itself to hang
+def test_exit_100_is_not_a_compile_failure():
+    # exit 100 used to be misread as "didn't compile"
+    r = run(CHECK_DIR, "exit100.cpp", "address")
+    assert r.compiled and r.exit_code == 100
+
+
+def test_build_failure_is_not_compiled(tmp_path):
+    b = build(CHECK_DIR, "broken.cpp", "address", tmp_path)
+    assert not b.compiled and not b.sandbox_failed
+
+
+def test_build_once_execute_twice(tmp_path):
+    b = build(CHECK_DIR, "bug.cpp", "address", tmp_path)
+    assert b.compiled
+    for _ in range(2):
+        r = execute(tmp_path, env={"ASAN_OPTIONS": "exitcode=77"})
+        assert r.exit_code == 77
+
+
+# TODO compile timeout. Needs a program that reliably compiles slowly.
+# TODO sandbox_failed=True. Needs Docker itself to hang.
