@@ -14,6 +14,8 @@ A claimed bug only counts if the model's test proves it:
 
 The model's own asserts or explanations are never taken as proof. Only a sanitizer report counts. A run counts as "fired" only when the program exits with the sanitizer's exit code (set to 77) **and** the sanitizer's report is in the output. Either one alone can be faked by the test.
 
+Scope: only bugs a sanitizer can detect, such as memory errors, undefined behaviour and data races. Logic bugs (wrong results without undefined behaviour) are out of scope for now.
+
 Some problems contain no bug at all. On those the correct answer is "no bug", and a test that fails to fire shows the claimed bug was a false alarm.
 
 ## Outcomes
@@ -74,8 +76,10 @@ Requirements: Linux (or WSL2), Docker, Python 3.13+ and uv.
 - [x] Answer parser
 - [x] Problem layout
 - [x] Grader
+- [ ] Prompt builder
+- [ ] Grader: run every sanitizer, TSan reruns, no-bug outcomes
 - [ ] Model client (OpenRouter)
-- [ ] First 10 problems (1/10)
+- [x] First 10 problems (drafted, proofs checked)
 - [ ] Problem validation + scaffold script
 - [ ] Run instructions
-- [ ] Later: no-bug outcomes, flaky-run retries, fixed-timeout test, canary in prompts, private problem set
+- [ ] Later: fixed-timeout test, canary in prompts, private problem set
