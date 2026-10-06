@@ -29,13 +29,13 @@ SAN_ENV = {
 
 @dataclass(frozen=True)
 class RunResult:
-    compiled: bool  # False -> test_invalid, (meaningless if sandbox_failed)
+    compiled: bool  # False means the test didn't compile (meaningless if sandbox_failed)
     exit_code: int | None  # None if it never ran
     output: str  # compiler errors, or the program's output + sanitizer report
     timed_out: bool  # 137 + "sending signal KILL"
     out_of_memory: bool  # 137 without it
     seconds: float
-    sandbox_failed: bool  # container never answered -> infra_error
+    sandbox_failed: bool  # the container never answered, so the attempt isn't graded
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class BuildResult:
     compiled: bool
     output: str  # compiler errors and warnings
     seconds: float
-    sandbox_failed: bool  # container never answered -> infra_error
+    sandbox_failed: bool  # the container never answered, so the attempt isn't graded
 
 
 def build(

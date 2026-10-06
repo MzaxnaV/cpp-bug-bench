@@ -20,14 +20,19 @@ Some problems contain no bug at all. On those the correct answer is "no bug", an
 
 ## Outcomes
 
-Every attempt ends in exactly one bucket:
+Every grade keeps three facts. The **claim** is what the model said (`bug` or `none`). **Has bug** is whether the problem really has one. The **proof** is what happened when we ran the model's test. One summary outcome is worked out from these three.
 
 | Outcome | Meaning |
 |---|---|
-| `found` | The test fires the sanitizer on the buggy version only |
-| `missed` | No proven bug |
-| `test_invalid` | The test doesn't compile, the answer is malformed, the test fires on both versions, or the result is flaky |
-| `infra_error` | Something outside the model failed (rate limit, timeout, provider error, Docker failure). Retried and reported separately, never counted as a miss |
+| `found` | Claimed the bug and proved it |
+| `missed` | Said "no bug" on a problem that has one, or claimed a bug but the test showed nothing |
+| `bad_test` | The answer was broken, or the test didn't compile, also reported on the corrected code, reported too rarely to count, or didn't finish |
+| `not_graded` | Something on our side failed (Docker, rate limit, provider). Retried, and never counted for or against the model |
+| `correct_none` | Said "no bug" on code that has none |
+| `false_alarm` | Claimed a bug in code that has none |
+| `needs_review` | Claimed a bug in code that has none, and the sanitizer did report. A person checks whether the test caused it or the code really has a bug |
+
+Proof statuses are `proven`, `no_report`, `reports_on_fixed_too`, `unreliable`, `fixed_did_not_finish`, `does_not_compile`, `reports_on_correct_code`, `docker_failed` and `no_test`.
 
 ## Problems
 

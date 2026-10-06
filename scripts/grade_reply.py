@@ -9,16 +9,16 @@ problem = load_problem(Path("problems") / sys.argv[1])
 answer = parse(Path(sys.argv[2]).read_text())
 print(f"verdict: {answer.verdict}  error: {answer.error}  fence_stripped: {answer.fence_stripped}")
 
-if not problem.has_bug:
-    # grading problems without a bug isn't built yet
-    print("no bug in this problem. 'none' is correct and 'bug' is a false alarm.")
-    sys.exit()
-
 g = grade(problem, answer)
-print(f"outcome: {g.outcome} ({g.reason})  build: {g.sanitizer}  expected: {problem.sanitizer}")
-if g.runs > 1:
-    print(f"fired: buggy {g.buggy_fired}/{g.runs}, fixed {g.fixed_fired}/{g.runs}")
-for name, r in [("buggy", g.buggy), ("fixed", g.fixed)]:
+p = g.proof
+print(f"outcome: {g.outcome}  claim: {g.claim}  has_bug: {g.has_bug}")
+print(f"proof: {p.status}  build: {p.sanitizer}  expected: {problem.sanitizer}")
+if p.runs > 1:
+    print(f"reports: buggy {p.buggy_reports}/{p.runs}, fixed {p.fixed_reports}/{p.runs}")
+
+# a problem without a bug has one version, kept in the "buggy" slot
+first = "buggy" if problem.has_bug else "code"
+for name, r in [(first, p.buggy), ("fixed", p.fixed)]:
     if r is None:
         continue
     summary = [line for line in r.output.splitlines() if "SUMMARY" in line]
